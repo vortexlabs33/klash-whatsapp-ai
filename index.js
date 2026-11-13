@@ -1,27 +1,40 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { Groq } = require('groq-sdk');
 const pino = require('pino');
+const readline = require('readline');
 
-// Initialize Groq using your secure cloud environment variable
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// For cloud environments where prompt input isn't available, we can set a dummy or use an environment variable for your phone number, 
+// OR use pairing code by passing it directly if supported. Let's use the standard pairing request workflow.
 async function startKlashAI() {
-    // Stores WhatsApp session auth locally in the cloud container
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true, // Displays the QR code in your Render deployment logs
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' })
     });
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('📌 Scan this QR code in your Render dashboard logs using WhatsApp Linked Devices:');
+    if (!sock.authState.creds.registered) {
+        // Put your WhatsApp phone number with country code here (e.g., 23480xxxxxxxx)
+        const phoneNumber = process.env.PHONE_NUMBER; 
+        if (phoneNumber) {
+            setTimeout(async () => {
+                try {
+                    const code = await sock.requestPairingCode(phoneNumber.trim());
+                    console.log(`\n🔗 YOUR WHATSAPP PAIRING CODE: ${code}\n`);
+                } catch (err) {
+                    console.error('Error requesting pairing code:', err);
+                }
+            }, 5000);
+        } else {
+            console.log('⚠️ Please add your PHONE_NUMBER environment variable in Render (e.g., 23480xxxxxxxx) to generate a pairing code.');
         }
+    }
 
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed, reconnecting:', shouldReconnect);
@@ -33,7 +46,6 @@ async function startKlashAI() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Listen for incoming WhatsApp messages
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         const msg = messages[0];
@@ -44,10 +56,8 @@ async function startKlashAI() {
         if (!messageText) return;
 
         try {
-            // Show typing status on WhatsApp
             await sock.sendPresenceUpdate('composing', senderID);
 
-            // Generate AI response via Groq
             const completion = await groq.chat.completions.create({
                 model: "llama-3.3-70b-versatile",
                 messages: [
