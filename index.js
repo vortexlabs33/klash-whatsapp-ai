@@ -1,9 +1,8 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { Groq } = require('groq-sdk');
 const pino = require('pino');
 const http = require('http');
 
-// Keep Render Web Service alive so it shows "Live" and never times out
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('KLASH AI Personal Assistant is running!\n');
@@ -15,7 +14,6 @@ server.listen(PORT, () => {
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// Keeps conversation context so you can chat naturally back-and-forth
 let chatHistory = [
     { 
         role: "system", 
@@ -63,12 +61,14 @@ async function startKlashAI() {
         const msg = messages[0];
         if (!msg.message) return;
 
-        // Your own WhatsApp JID
-        const myNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-        const senderID = msg.key.remoteJid;
+        // Normalize both your Phone Number JID and your WhatsApp LID
+        const myPhoneJid = jidNormalizedUser(sock.user.id);
+        const myLid = sock.user.lid ? jidNormalizedUser(sock.user.lid) : '';
+        const senderID = jidNormalizedUser(msg.key.remoteJid);
 
-        // 1. STRICT LOCK: Only respond inside your "Message Yourself" chat
-        if (senderID !== myNumber) return;
+        // 1. STRICT SELF-CHAT LOCK: Allow both @s.whatsapp.net and @lid for your own account
+        const isSelfChat = (senderID === myPhoneJid) || (myLid && senderID === myLid);
+        if (!isSelfChat) return;
 
         const messageText = msg.message.conversation || msg.message.extendedTextMessage?.text;
         if (!messageText) return;
@@ -76,15 +76,14 @@ async function startKlashAI() {
         // 2. LOOP PREVENTION: Ignore messages sent by KLASH AI itself
         if (messageText.startsWith('🤖 *KLASH AI:*')) return;
 
-        // Command to reset chat memory anytime
         if (messageText.trim().toLowerCase() === '/clear') {
             chatHistory = [chatHistory[0]];
-            await sock.sendMessage(myNumber, { text: '🤖 *KLASH AI:* Memory cleared. Ready for a fresh topic!' });
+            await sock.sendMessage(senderID, { text: '🤖 *KLASH AI:* Memory cleared. Ready for a fresh topic!' });
             return;
         }
 
         try {
-            await sock.sendPresenceUpdate('composing', myNumber);
+            await sock.sendPresenceUpdate('composing', senderID);
 
             chatHistory.push({ role: "user", content: messageText });
             if (chatHistory.length > 13) {
@@ -99,11 +98,11 @@ async function startKlashAI() {
             const aiReply = completion.choices[0]?.message?.content || "I couldn't process that.";
             chatHistory.push({ role: "assistant", content: aiReply });
 
-            await sock.sendMessage(myNumber, { text: `🤖 *KLASH AI:*\n\n${aiReply}` });
+            await sock.sendMessage(senderID, { text: `🤖 *KLASH AI:*\n\n${aiReply}` });
             
         } catch (error) {
             console.error('AI Error:', error);
-            await sock.sendMessage(myNumber, { text: "🤖 *KLASH AI:* ⚠️ Error reaching Groq backend." });
+            await sock.sendMessage(senderID, { text: "🤖 *KLASH AI:* ⚠️ Error reaching Groq backend." });
         }
     });
 }
