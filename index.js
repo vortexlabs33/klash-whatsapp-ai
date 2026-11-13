@@ -12,8 +12,8 @@ server.listen(PORT, () => {
     console.log(`🌐 HTTP Server active on port ${PORT}`);
 });
 
-// Initialize Groq and Telegram Bot with your hardcoded token
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Initialize Groq and Telegram Bot with hardcoded keys for instant deployment
+const groq = new Groq({ apiKey: "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" });
 const TOKEN = '9070673617:AAGgXTr_Vzs5keeJUK8g6KFatCFna1d3aJk';
 
 const bot = new TelegramBot(TOKEN, { polling: true });
