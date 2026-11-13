@@ -1,12 +1,20 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { Groq } = require('groq-sdk');
 const pino = require('pino');
-const readline = require('readline');
+const http = require('http');
+
+// Create a dummy HTTP server so Render's free tier is happy and doesn't time out with a port error
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('KLASH AI WhatsApp Bot is running live!\n');
+});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`🌐 Dummy web server listening on port ${PORT}`);
+});
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// For cloud environments where prompt input isn't available, we can set a dummy or use an environment variable for your phone number, 
-// OR use pairing code by passing it directly if supported. Let's use the standard pairing request workflow.
 async function startKlashAI() {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
 
@@ -17,7 +25,6 @@ async function startKlashAI() {
     });
 
     if (!sock.authState.creds.registered) {
-        // Put your WhatsApp phone number with country code here (e.g., 23480xxxxxxxx)
         const phoneNumber = process.env.PHONE_NUMBER; 
         if (phoneNumber) {
             setTimeout(async () => {
@@ -29,7 +36,7 @@ async function startKlashAI() {
                 }
             }, 5000);
         } else {
-            console.log('⚠️ Please add your PHONE_NUMBER environment variable in Render (e.g., 23480xxxxxxxx) to generate a pairing code.');
+            console.log('⚠️ Please add your PHONE_NUMBER environment variable in Render.');
         }
     }
 
