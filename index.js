@@ -15,6 +15,9 @@ server.listen(PORT, () => {
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// HARDCODED PHONE NUMBER: Your exact WhatsApp number
+const BOT_PHONE_NUMBER = '2348062112118';
+
 // Conversation history for context memory
 let chatHistory = [
     { 
@@ -33,17 +36,14 @@ async function startKlashAI() {
     });
 
     if (!sock.authState.creds.registered) {
-        const phoneNumber = process.env.PHONE_NUMBER; 
-        if (phoneNumber) {
-            setTimeout(async () => {
-                try {
-                    const code = await sock.requestPairingCode(phoneNumber.trim());
-                    console.log(`\n🔗 YOUR WHATSAPP PAIRING CODE: ${code}\n`);
-                } catch (err) {
-                    console.error('Error requesting pairing code:', err);
-                }
-            }, 5000);
-        }
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(BOT_PHONE_NUMBER.trim());
+                console.log(`\n🔗 YOUR WHATSAPP PAIRING CODE: ${code}\n`);
+            } catch (err) {
+                console.error('Error requesting pairing code:', err);
+            }
+        }, 5000);
     }
 
     sock.ev.on('connection.update', (update) => {
@@ -68,16 +68,13 @@ async function startKlashAI() {
 
         const remoteJid = msg.key.remoteJid;
 
-        // Verify this is your "Message Yourself" chat (remoteJid contains your own user ID or is your own number JID)
         const myNumberBase = sock.user ? sock.user.id.split(':')[0] : '';
-        const isSelfChat = remoteJid.includes(myNumberBase) || remoteJid === 'status@broadcast'; // broadcast ignored later
+        const isSelfChat = remoteJid.includes(myNumberBase) || remoteJid === 'status@broadcast';
 
         if (!isSelfChat || remoteJid === 'status@broadcast') return;
 
-        // LOOP PREVENTION: Ignore messages that KLASH AI itself just sent
         if (messageText.startsWith('🤖 *KLASH AI:*')) return;
 
-        // Command to clear memory
         if (messageText.trim().toLowerCase() === '/clear') {
             chatHistory = [chatHistory[0]];
             await sock.sendMessage(remoteJid, { text: '🤖 *KLASH AI:* Memory cleared. Ready for a fresh topic!' });
@@ -101,7 +98,6 @@ async function startKlashAI() {
             const aiReply = completion.choices[0]?.message?.content || "I couldn't process that.";
             chatHistory.push({ role: "assistant", content: aiReply });
 
-            // Send reply directly back into your self-chat
             await sock.sendMessage(remoteJid, { text: `🤖 *KLASH AI:*\n\n${aiReply}` });
             console.log(`📤 Replied successfully to self-chat.`);
             
