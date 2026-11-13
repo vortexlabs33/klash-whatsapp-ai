@@ -6,7 +6,7 @@ const http = require('http');
 // Dummy HTTP server to keep Render Free Tier happy and "Live"
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('KLASH AI Personal Assistant is running live!\n');
+    res.end('KLASH AI Assistant is running live!\n');
 });
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
@@ -15,8 +15,11 @@ server.listen(PORT, () => {
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// HARDCODED PHONE NUMBER: Your exact WhatsApp number
-const BOT_PHONE_NUMBER = '2348062112118';
+// SECOND NUMBER FOR KLASH AI BOT
+const BOT_PHONE_NUMBER = '2347059152620';
+
+// REPLACE WITH YOUR MAIN PERSONAL WHATSAPP NUMBER (so only you can chat with it)
+const OWNER_NUMBER = '2348062112118@s.whatsapp.net';
 
 // Conversation history for context memory
 let chatHistory = [
@@ -39,7 +42,7 @@ async function startKlashAI() {
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(BOT_PHONE_NUMBER.trim());
-                console.log(`\n🔗 YOUR WHATSAPP PAIRING CODE: ${code}\n`);
+                console.log(`\n🔗 YOUR KLASH AI PAIRING CODE: ${code}\n`);
             } catch (err) {
                 console.error('Error requesting pairing code:', err);
             }
@@ -52,38 +55,35 @@ async function startKlashAI() {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startKlashAI();
         } else if (connection === 'open') {
-            console.log('🚀 KLASH AI Personal Assistant is live and connected!');
+            console.log('🚀 KLASH AI Bot is live and connected!');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Bulletproof message listener for Self-Chat
-    sock.ev.on('messages.upsert', async ({ messages }) => {
+    // Message listener: Only responds when your main number messages the bot number
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
         const msg = messages[0];
-        if (!msg.message) return;
+        if (!msg.message || msg.key.fromMe) return;
+
+        const senderID = msg.key.remoteJid;
+
+        // STRICT SECURITY: Only reply to your main personal number
+        if (senderID !== OWNER_NUMBER) return;
 
         const messageText = msg.message.conversation || msg.message.extendedTextMessage?.text;
         if (!messageText) return;
 
-        const remoteJid = msg.key.remoteJid;
-
-        const myNumberBase = sock.user ? sock.user.id.split(':')[0] : '';
-        const isSelfChat = remoteJid.includes(myNumberBase) || remoteJid === 'status@broadcast';
-
-        if (!isSelfChat || remoteJid === 'status@broadcast') return;
-
-        if (messageText.startsWith('🤖 *KLASH AI:*')) return;
-
         if (messageText.trim().toLowerCase() === '/clear') {
             chatHistory = [chatHistory[0]];
-            await sock.sendMessage(remoteJid, { text: '🤖 *KLASH AI:* Memory cleared. Ready for a fresh topic!' });
+            await sock.sendMessage(senderID, { text: '🤖 *KLASH AI:* Memory cleared. Ready for a fresh topic!' });
             return;
         }
 
         try {
-            console.log(`📥 Received prompt from self-chat: "${messageText}"`);
-            await sock.sendPresenceUpdate('composing', remoteJid);
+            console.log(`📥 Received prompt from owner: "${messageText}"`);
+            await sock.sendPresenceUpdate('composing', senderID);
 
             chatHistory.push({ role: "user", content: messageText });
             if (chatHistory.length > 13) {
@@ -98,12 +98,12 @@ async function startKlashAI() {
             const aiReply = completion.choices[0]?.message?.content || "I couldn't process that.";
             chatHistory.push({ role: "assistant", content: aiReply });
 
-            await sock.sendMessage(remoteJid, { text: `🤖 *KLASH AI:*\n\n${aiReply}` });
-            console.log(`📤 Replied successfully to self-chat.`);
+            await sock.sendMessage(senderID, { text: aiReply });
+            console.log(`📤 Replied successfully to owner.`);
             
         } catch (error) {
             console.error('AI Error:', error);
-            await sock.sendMessage(remoteJid, { text: "🤖 *KLASH AI:* ⚠️ Error reaching Groq backend." });
+            await sock.sendMessage(senderID, { text: "🤖 *KLASH AI:* ⚠️ Error reaching Groq backend." });
         }
     });
 }
